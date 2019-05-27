@@ -12,4 +12,7 @@
 *.out
 
 #vscode folder
-/.vscode
+**.vscode/
+
+#Output folders
+**.bin/

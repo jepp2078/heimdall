@@ -2,7 +2,7 @@
 
 #### Design document - 23/05-2019
 
-#### Author: Jeppe Johansen
+#### Author: @Jepp2078
 
 ## Purpose
 

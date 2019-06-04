@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
@@ -126,18 +127,24 @@ func (c *Controller) processNextItem() bool {
 	//
 	// after both instances, we want to forget the key from the queue, as this indicates
 	// a code path of successful queue key processing
-
 	if !exists {
-		//Deployment deleted. Do nothing, annotation is gone with the deployment.
+		// If exists is false, we can assume that the key is a reference to a configmap
+		parts := strings.Split(keyRaw, "/")
+		c.logger.Printf("Deleting configmap: %s/%s", parts[0], parts[1])
+		res, err := c.clientset.CoreV1().ConfigMaps(parts[0]).Get(parts[1], metaV1.GetOptions{})
+		if err != nil {
+			c.logger.Printf("Configmap not found: %s", err)
+		} else {
+			c.clientset.CoreV1().ConfigMaps(res.Namespace).Delete(res.Name, &metaV1.DeleteOptions{})
+		}
 	} else {
 		deployment := item.(*apiV1.Deployment)
-		c.logger.Printf("Deployment discovered: %s", deployment.Name)
+		c.logger.Printf("Deployment discovered: %s/%s", deployment.Namespace, deployment.Name)
 		annotations := deployment.Annotations
 		if _, found := annotations[HeimdallAnnotationName]; found {
 			c.logger.Printf("Annotation found")
 			if _, found := annotations[HeimdallInjectedAnnotationName]; found {
 				c.logger.Printf("Skipping. Deployment already injected")
-
 			} else {
 				err := c.addConfigurationToDeployment(deployment, annotations[HeimdallAnnotationName])
 				if err != nil {
@@ -162,8 +169,8 @@ func (c *Controller) processNextItem() bool {
 
 func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, reference string) error {
 	deployment := obj.DeepCopy()
-	//Create configmap and append to container
-	configuration, err := c.generateConfigurationFromSource(reference)
+	// Create configmap and append to container
+	configuration, err := c.generateConfiguration(reference)
 
 	if err != nil {
 		return fmt.Errorf("%s", err)
@@ -174,7 +181,7 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 	deployment.Annotations[HeimdallConfigVersionAnnotationName] = configuration.ConfigVersion
 
 	for i := range deployment.Spec.Template.Spec.Containers {
-		configMapSource, err := c.appendConfigMapFromConfiguration(configuration)
+		configMapSource, err := c.createConfigMapFromConfiguration(configuration)
 
 		if err != nil {
 			return fmt.Errorf("%s", err)
@@ -182,14 +189,13 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 
 		if configMapSource != nil {
 			envFrom := coreV1.EnvFromSource{ConfigMapRef: configMapSource}
-			c.logger.Print("Injecting ConfigMap")
+			c.logger.Printf("Injecting ConfigMap to deployment: %s/%s", deployment.Namespace, deployment.Name)
 			deployment.Spec.Template.Spec.Containers[i].EnvFrom = append(deployment.Spec.Template.Spec.Containers[i].EnvFrom, envFrom)
 		}
 
 		// err := c.appendSecretsFromConfiguration(*container, configuration)
 	}
 
-	c.logger.Print("Appending heimdall configuration to deployment")
 	_, err = c.clientset.AppsV1().Deployments(configuration.Metadata.Namespace).Update(deployment)
 
 	if err != nil {
@@ -199,26 +205,8 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 	return nil
 }
 
-func (c *Controller) generateConfigurationFromSource(reference string) (*Configuration, error) {
-	//Get the secret containing git-credentatials
-	secret, err := c.clientset.CoreV1().Secrets("kube-system").Get(c.gitCredentials, metaV1.GetOptions{})
-
-	if err != nil {
-		return nil, fmt.Errorf("%s", err)
-	}
-
-	//generate configuration from the reference given in the deployment annotation.
-	configuration, err := c.generateConfiguration(secret, reference)
-
-	if err != nil {
-		return nil, fmt.Errorf("%s", err)
-	}
-
-	return configuration, nil
-}
-
-func (c *Controller) generateConfiguration(secret *coreV1.Secret, reference string) (*Configuration, error) {
-	//Split the configuration reference in the format: identification:location:file
+func (c *Controller) generateConfiguration(reference string) (*Configuration, error) {
+	// Split the configuration reference in the format: identification:location:file
 	resource := strings.Split(reference, "#")
 	location := resource[0]
 	file := resource[1]
@@ -228,21 +216,41 @@ func (c *Controller) generateConfiguration(secret *coreV1.Secret, reference stri
 	// Git objects storer based on memory
 	storer := memory.NewStorage()
 
-	//Fetch configuration from repository
-	c.logger.Print("Fetching config from remote")
-	_, err := git.Clone(storer, fs, &git.CloneOptions{
-		URL: location,
-		Auth: &http.BasicAuth{
-			Username: string(secret.Data["username"]),
-			Password: string(secret.Data["password"]),
-		},
-	})
+	if c.gitCredentials != "" {
+		// Get the secret containing git-credentatials
+		parts := strings.Split(c.gitCredentials, "/")
+		c.logger.Printf("Fetching git-credentials secret: %s/%s", parts[0], parts[1])
+		secret, err := c.clientset.CoreV1().Secrets(parts[0]).Get(parts[1], metaV1.GetOptions{})
+
+		if err != nil {
+			return nil, fmt.Errorf("%s", err)
+		}
+
+		err = c.fetchConfigFromRemote(location, fs, storer, secret)
+
+		if err != nil {
+			return nil, fmt.Errorf("%s", err)
+		}
+
+	} else {
+		err := c.fetchConfigFromRemote(location, fs, storer, &coreV1.Secret{})
+
+		if err != nil {
+			return nil, fmt.Errorf("%s", err)
+		}
+	}
+
+	configuration, err := c.unmarshalConfiguration(file, fs)
 
 	if err != nil {
 		return nil, fmt.Errorf("%s", err)
 	}
 
-	//Open file from in-mem filesystem
+	return configuration, nil
+}
+
+func (c *Controller) unmarshalConfiguration(file string, fs billy.Filesystem) (*Configuration, error) {
+	// Open file from in-mem filesystem
 	configFile, err := fs.Open(file)
 	defer configFile.Close()
 
@@ -265,7 +273,34 @@ func (c *Controller) generateConfiguration(secret *coreV1.Secret, reference stri
 	return configuration, nil
 }
 
-func (c *Controller) appendConfigMapFromConfiguration(configuration *Configuration) (*coreV1.ConfigMapEnvSource, error) {
+func (c *Controller) fetchConfigFromRemote(location string, fs billy.Filesystem, storer *memory.Storage, secret *coreV1.Secret) error {
+	// Fetch configuration from repository
+	if secret.Name == "" {
+		c.logger.Printf("Fetching config from remote: %s", location)
+		_, err := git.Clone(storer, fs, &git.CloneOptions{
+			URL: location,
+		})
+		if err != nil {
+			return fmt.Errorf("%s", err)
+		}
+	} else {
+		c.logger.Printf("Fetching config with auth from remote: %s", location)
+		_, err := git.Clone(storer, fs, &git.CloneOptions{
+			URL: location,
+			Auth: &http.BasicAuth{
+				Username: string(secret.Data["username"]),
+				Password: string(secret.Data["password"]),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("%s", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Controller) createConfigMapFromConfiguration(configuration *Configuration) (*coreV1.ConfigMapEnvSource, error) {
 	if len(configuration.Entities) > 0 {
 		configMap := &coreV1.ConfigMap{}
 		data := make(map[string]string)
@@ -282,7 +317,7 @@ func (c *Controller) appendConfigMapFromConfiguration(configuration *Configurati
 		res, err := c.clientset.CoreV1().ConfigMaps(configuration.Metadata.Namespace).Get(configMap.Name, metaV1.GetOptions{})
 
 		if err != nil {
-			c.logger.Printf("Creating config map: %s", configMap.Name)
+			c.logger.Printf("Creating config map: %s/%s", configuration.Metadata.Namespace, configMap.Name)
 			res, err = c.clientset.CoreV1().ConfigMaps(configuration.Metadata.Namespace).Create(configMap)
 			if err != nil {
 				return nil, fmt.Errorf("%s", err)
@@ -291,7 +326,7 @@ func (c *Controller) appendConfigMapFromConfiguration(configuration *Configurati
 			oldConfigMap := res.DeepCopy()
 
 			oldConfigMap.Data = data
-			c.logger.Printf("Updating config map: %s", oldConfigMap.Name)
+			c.logger.Printf("Updating config map: %s/%s", oldConfigMap.Namespace, oldConfigMap.Name)
 			res, err = c.clientset.CoreV1().ConfigMaps(configuration.Metadata.Namespace).Update(oldConfigMap)
 			if err != nil {
 				return nil, fmt.Errorf("%s", err)

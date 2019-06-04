@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
@@ -20,18 +22,28 @@ import (
 )
 
 var (
-	kubeConfigFile = flag.String("kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
-	gitCredentials = flag.String("git-credentials", "heimdall-git-credentials", "Reference to secret that holds git credentials. Formatted username:password")
+	kubeConfigFile    = flag.String("kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
+	gitCredentials    = flag.String("git-credentials", "", "Reference to secret that holds git credentials. Formatted username:password. If left blank, no credentials will be used.")
+	cleanUpConfigmaps = flag.Bool("configmap-cleanup", false, "If set to true, config-maps injected into deployments, will be deleted when the deployment is deleted.")
 )
 
 func init() {
 	flag.Parse()
+	if *gitCredentials != "" {
+		parts := strings.Split(*gitCredentials, "/")
+		if len(parts) != 2 {
+			panic("git-credentials flag invalid. Format as namespace/secretName.")
+		}
+	}
 }
 
 // main code path
 func main() {
 	// get the Kubernetes client for connectivity
 	client := getKubernetesClient()
+
+	//create logger
+	logger := log.NewEntry(log.New())
 
 	// create the informer so that we can not only list resources
 	// but also watch them for all deployments
@@ -91,9 +103,19 @@ func main() {
 			// a resource was deleted but it is still contained in the index
 			//
 			// this then in turn calls MetaNamespaceKeyFunc
-			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-			if err == nil {
-				queue.Add(key)
+			//
+			// If the deleted deployment has been injected with a configmap, a reference
+			// to that config map will be contructed, and appended to the queue
+			if *cleanUpConfigmaps {
+				_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err == nil {
+					deployment := obj.(*apiV1.Deployment)
+					annotations := deployment.Annotations
+					if _, found := annotations[HeimdallAnnotationName]; found {
+						name := fmt.Sprintf("%s/heimdall-%s-%s", deployment.Namespace, annotations[HeimdallNameAnnotationName], annotations[HeimdallConfigVersionAnnotationName])
+						queue.Add(name)
+					}
+				}
 			}
 		},
 	})
@@ -102,7 +124,7 @@ func main() {
 	// handle logging, connections, informing (listing and watching), the queue,
 	// and the handler
 	controller := Controller{
-		logger:         log.NewEntry(log.New()),
+		logger:         logger,
 		clientset:      client,
 		gitCredentials: *gitCredentials,
 		informer:       informer,
@@ -142,9 +164,9 @@ func getKubernetesClient() kubernetes.Interface {
 		}
 		log.Info("Successfully constructed k8s client")
 		return clientSet
-	} else {
-		log.Warn("InClusterConfig failed: " + err.Error())
 	}
+
+	log.Warn("InClusterConfig failed: " + err.Error())
 
 	// construct the path to resolve to `~/.kube/config`
 	kubeConfigPath := os.Getenv("KUBECONFIG")

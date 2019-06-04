@@ -6,7 +6,7 @@ export BINNAME:=jepp2078/heimdall-injector
 all: build run
 
 run:
-	./bin/${BINNAME} --kubeconfig=/home/${USER}/.kube/config
+	./bin/${BINNAME} --kubeconfig=/home/${USER}/.kube/config --git-credentials=kube-system/heimdall-git-credentials --configmap-cleanup=true
 
 test:
 	go test ./...

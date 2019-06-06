@@ -4,10 +4,9 @@ import (
 	"context"
 	"net"
 
-	generated "github.com/jepp2078/heimdall"
-
+	"github.com/jepp2078/heimdall/generated"
 	log "github.com/sirupsen/logrus"
-	"grpc.go4.org"
+	grpc "google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -25,11 +24,14 @@ func (c *Controller) GetPrivateKey(ctx context.Context, namespace *generated.Nam
 	return nil, nil
 }
 
-// GetPublicKey receives a request for a public key. If the key doesn't exist a private/public key pair will be created in the specified namespace, and a reference to the public key will be returned to the callee.
-func (s *Controller) GetPublicKey(ctx context.Context, namespace *generated.Namespace) (*generated.Key, error) {
+// GetPublicKey receives a request for a public key.
+// If the key doesn't exist a private/public key pair will be created in the specified namespace,
+// and a reference to the public key will be returned to the callee.
+func (c *Controller) GetPublicKey(ctx context.Context, namespace *generated.Namespace) (*generated.Key, error) {
 	return nil, nil
 }
 
+//Run is the main path of execution for the controller loop
 func (c *Controller) Run() {
 	lis, err := net.Listen("tcp", "localhost:8080")
 	if err != nil {
@@ -40,4 +42,5 @@ func (c *Controller) Run() {
 	generated.RegisterHeimdallKeysServer(grpcServer, c)
 	c.logger.Info("GRPC service exposed on tcp://127.0.0.1:8080/")
 	c.logger.Fatalf("Fatal: %s", grpcServer.Serve(lis))
+	defer grpcServer.GracefulStop()
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
@@ -33,6 +35,15 @@ func main() {
 		logger:    logger,
 		clientset: client,
 	}
+
+	go controller.Run()
+
+	// use a channel to handle OS signals to terminate and gracefully shut
+	// down processing
+	sigTerm := make(chan os.Signal, 1)
+	signal.Notify(sigTerm, syscall.SIGTERM)
+	signal.Notify(sigTerm, syscall.SIGINT)
+	<-sigTerm
 }
 
 func getKubernetesClient() kubernetes.Interface {

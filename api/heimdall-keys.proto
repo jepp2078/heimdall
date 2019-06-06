@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package generated;
+
+service HeimdallKeys {
+    rpc GetPrivateKey(Namespace) returns (Key) {}
+    rpc GetPublicKey(Namespace) returns (Key) {}
+}
+
+message Key {
+    string key = 1;
+}
+
+message Namespace {
+    string namespace = 1;
+}

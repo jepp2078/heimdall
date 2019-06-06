@@ -38,3 +38,6 @@ clean:
 	(cd injector && make clean)
 	(cd keys && make clean)
 	(cd secrets && make clean)
+
+generate:
+	(cd api && protoc -I ./ heimdall-keys.proto --go_out=plugins=grpc:../generated)

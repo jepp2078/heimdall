@@ -17,5 +17,8 @@ build-docker:
 build:
 	go build -mod vendor -o bin/${BINNAME} .
 
+generate:
+	(cd ../ && make generate)
+
 clean:
 	sudo rm bin/${BINNAME}

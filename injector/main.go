@@ -7,8 +7,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/jepp2078/heimdall/generated"
 	log "github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
+	grpc "google.golang.org/grpc"
 	apiV1 "k8s.io/api/apps/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,6 +27,7 @@ var (
 	kubeConfigFile    = flag.String("kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
 	gitCredentials    = flag.String("git-credentials", "", "Reference to secret that holds git credentials. Formatted username:password. If left blank, no credentials will be used.")
 	cleanUpConfigmaps = flag.Bool("configmap-cleanup", false, "If set to true, config-maps injected into deployments, will be deleted when the deployment is deleted.")
+	keysAddr          = flag.String("keys-address", "heimdall-keys:8080", "The address of the heimdall-keys pod")
 )
 
 func init() {
@@ -39,6 +42,19 @@ func init() {
 
 // main code path
 func main() {
+
+	// create grpc connection to keys service
+	grpc, err := createKeysClient()
+
+	defer grpc.Close()
+
+	if err != nil {
+		log.Fatalf("Fatal: %s", err.Error())
+		return
+	}
+
+	keysClient := generated.NewHeimdallKeysClient(grpc)
+
 	// get the Kubernetes client for connectivity
 	client := getKubernetesClient()
 
@@ -126,6 +142,7 @@ func main() {
 	controller := Controller{
 		logger:         logger,
 		clientset:      client,
+		keysClient:     keysClient,
 		gitCredentials: *gitCredentials,
 		informer:       informer,
 		queue:          queue}
@@ -193,4 +210,16 @@ func getKubernetesClient() kubernetes.Interface {
 
 	log.Info("Successfully constructed k8s client")
 	return client
+}
+
+func createKeysClient() (*grpc.ClientConn, error) {
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithInsecure())
+	conn, err := grpc.Dial(*keysAddr, opts...)
+	if err != nil {
+		log.Fatalf("failed to dial: %v", err)
+		return nil, err
+	}
+	log.Infof("Could etablish connection to Keys GRPC address: %s", *keysAddr)
+	return conn, nil
 }

@@ -1,4 +1,4 @@
-# cloud.google.com/go v0.34.0
+# cloud.google.com/go v0.37.1
 cloud.google.com/go/compute/metadata
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
@@ -12,10 +12,10 @@ github.com/emirpasic/gods/lists
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
-# github.com/golang/protobuf v1.3.1
+# github.com/golang/protobuf v1.3.2
 github.com/golang/protobuf/proto
-github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes
+github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
 # github.com/google/gofuzz v1.0.0
@@ -31,6 +31,8 @@ github.com/hashicorp/golang-lru/simplelru
 github.com/imdario/mergo
 # github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 github.com/jbenet/go-context/io
+# github.com/jepp2078/heimdall v0.0.0-20190606090205-db9af9aae87c
+github.com/jepp2078/heimdall/generated
 # github.com/json-iterator/go v1.1.6
 github.com/json-iterator/go
 # github.com/kevinburke/ssh_config v0.0.0-20180830205328-81db2a75821e
@@ -77,9 +79,11 @@ golang.org/x/crypto/poly1305
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/internal/subtle
 # golang.org/x/net v0.0.0-20190522155817-f3200d17e092
+golang.org/x/net/trace
 golang.org/x/net/http2
-golang.org/x/net/http/httpguts
+golang.org/x/net/internal/timeseries
 golang.org/x/net/http2/hpack
+golang.org/x/net/http/httpguts
 golang.org/x/net/idna
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
@@ -93,7 +97,7 @@ golang.org/x/oauth2/jwt
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/cpu
-# golang.org/x/text v0.3.0
+# golang.org/x/text v0.3.1-0.20180807135948-17ff2d5776d2
 golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
@@ -111,11 +115,47 @@ google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
+# google.golang.org/genproto v0.0.0-20190307195333-5fe7a883aa19
+google.golang.org/genproto/googleapis/rpc/status
+# google.golang.org/grpc v1.24.0
+google.golang.org/grpc
+google.golang.org/grpc/balancer
+google.golang.org/grpc/balancer/roundrobin
+google.golang.org/grpc/codes
+google.golang.org/grpc/connectivity
+google.golang.org/grpc/credentials
+google.golang.org/grpc/encoding
+google.golang.org/grpc/encoding/proto
+google.golang.org/grpc/grpclog
+google.golang.org/grpc/internal
+google.golang.org/grpc/internal/backoff
+google.golang.org/grpc/internal/balancerload
+google.golang.org/grpc/internal/binarylog
+google.golang.org/grpc/internal/channelz
+google.golang.org/grpc/internal/envconfig
+google.golang.org/grpc/internal/grpcrand
+google.golang.org/grpc/internal/grpcsync
+google.golang.org/grpc/internal/transport
+google.golang.org/grpc/keepalive
+google.golang.org/grpc/metadata
+google.golang.org/grpc/naming
+google.golang.org/grpc/peer
+google.golang.org/grpc/resolver
+google.golang.org/grpc/resolver/dns
+google.golang.org/grpc/resolver/passthrough
+google.golang.org/grpc/serviceconfig
+google.golang.org/grpc/stats
+google.golang.org/grpc/status
+google.golang.org/grpc/tap
+google.golang.org/grpc/balancer/base
+google.golang.org/grpc/credentials/internal
+google.golang.org/grpc/binarylog/grpc_binarylog_v1
+google.golang.org/grpc/internal/syscall
 # gopkg.in/inf.v0 v0.9.1
 gopkg.in/inf.v0
 # gopkg.in/src-d/go-billy.v4 v4.2.1
-gopkg.in/src-d/go-billy.v4/memfs
 gopkg.in/src-d/go-billy.v4
+gopkg.in/src-d/go-billy.v4/memfs
 gopkg.in/src-d/go-billy.v4/helper/chroot
 gopkg.in/src-d/go-billy.v4/util
 gopkg.in/src-d/go-billy.v4/osfs
@@ -167,9 +207,9 @@ gopkg.in/warnings.v0
 # gopkg.in/yaml.v2 v2.2.2
 gopkg.in/yaml.v2
 # k8s.io/api v0.0.0-20190313235455-40a48860b5ab
+k8s.io/api/apps/v1
 k8s.io/api/core/v1
 k8s.io/api/admissionregistration/v1beta1
-k8s.io/api/apps/v1
 k8s.io/api/autoscaling/v1
 k8s.io/api/apps/v1beta1
 k8s.io/api/apps/v1beta2
@@ -209,10 +249,10 @@ k8s.io/apimachinery/pkg/runtime
 k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/util/wait
 k8s.io/apimachinery/pkg/watch
-k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/runtime/schema
-k8s.io/apimachinery/pkg/types
 k8s.io/apimachinery/pkg/util/intstr
+k8s.io/apimachinery/pkg/api/resource
+k8s.io/apimachinery/pkg/types
 k8s.io/apimachinery/pkg/conversion
 k8s.io/apimachinery/pkg/fields
 k8s.io/apimachinery/pkg/labels

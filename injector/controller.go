@@ -1,6 +1,11 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha512"
+	"crypto/x509"
 	"fmt"
 	"strings"
 	"time"
@@ -22,6 +27,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/jepp2078/heimdall/generated"
+	"github.com/jepp2078/heimdall/models"
 )
 
 const (
@@ -37,6 +45,7 @@ const (
 type Controller struct {
 	logger         *log.Entry
 	clientset      kubernetes.Interface
+	keysClient     generated.HeimdallKeysClient
 	gitCredentials string
 	queue          workqueue.RateLimitingInterface
 	informer       cache.SharedIndexInformer
@@ -205,7 +214,7 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 	return nil
 }
 
-func (c *Controller) generateConfiguration(reference string) (*Configuration, error) {
+func (c *Controller) generateConfiguration(reference string) (*models.Configuration, error) {
 	// Split the configuration reference in the format: identification:location:file
 	resource := strings.Split(reference, "#")
 	location := resource[0]
@@ -249,7 +258,7 @@ func (c *Controller) generateConfiguration(reference string) (*Configuration, er
 	return configuration, nil
 }
 
-func (c *Controller) unmarshalConfiguration(file string, fs billy.Filesystem) (*Configuration, error) {
+func (c *Controller) unmarshalConfiguration(file string, fs billy.Filesystem) (*models.Configuration, error) {
 	// Open file from in-mem filesystem
 	configFile, err := fs.Open(file)
 	defer configFile.Close()
@@ -258,7 +267,7 @@ func (c *Controller) unmarshalConfiguration(file string, fs billy.Filesystem) (*
 		return nil, fmt.Errorf("%s", err)
 	}
 
-	configuration := &Configuration{}
+	configuration := &models.Configuration{}
 	byteArray, err := ioutil.ReadAll(configFile)
 	if err != nil {
 		return nil, fmt.Errorf("%s", err)
@@ -300,13 +309,29 @@ func (c *Controller) fetchConfigFromRemote(location string, fs billy.Filesystem,
 	return nil
 }
 
-func (c *Controller) createConfigMapFromConfiguration(configuration *Configuration) (*coreV1.ConfigMapEnvSource, error) {
+func (c *Controller) createConfigMapFromConfiguration(configuration *models.Configuration) (*coreV1.ConfigMapEnvSource, error) {
 	if len(configuration.Entities) > 0 {
 		configMap := &coreV1.ConfigMap{}
 		data := make(map[string]string)
 		for _, entity := range configuration.Entities {
 			if !entity.Encrypted {
 				data[entity.Name] = entity.Value
+			} else {
+				query := &generated.Namespace{Namespace: configuration.Metadata.Namespace}
+				ctx := context.Background()
+				key, err := c.keysClient.GetPrivateKey(ctx, query)
+
+				if err != nil {
+					return nil, fmt.Errorf("%s", err)
+				}
+
+				value, err := unencryptConfiguration(entity.Value, key)
+
+				if err != nil {
+					return nil, fmt.Errorf("%s", err)
+				}
+
+				data[entity.Name] = value
 			}
 		}
 
@@ -345,6 +370,19 @@ func (c *Controller) createConfigMapFromConfiguration(configuration *Configurati
 	return nil, nil
 }
 
-// func (c *Controller) appendSecretsFromConfiguration(configuration *Configuration)  error {
+func unencryptConfiguration(data string, key *generated.Key) (string, error) {
+	hash := sha512.New()
+	pKey, err := x509.ParsePKCS1PrivateKey([]byte(key.GetKey()))
 
-// }
+	if err != nil {
+		return "", fmt.Errorf("%s", err)
+	}
+
+	plaintext, err := rsa.DecryptOAEP(hash, rand.Reader, pKey, []byte(data), nil)
+
+	if err != nil {
+		return "", fmt.Errorf("%s", err)
+	}
+
+	return string(plaintext), nil
+}

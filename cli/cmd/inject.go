@@ -16,10 +16,27 @@ limitations under the License.
 package cmd
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha512"
+	"crypto/x509"
+	"encoding/pem"
+	"io/ioutil"
+	"os"
+
+	"github.com/golang/glog"
+	"github.com/jepp2078/heimdall/models"
 	"github.com/spf13/cobra"
+	yaml "gopkg.in/yaml.v2"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
-var configFile string
+var configFileLocation string
+var variable string
+var data string
+
+const HeimdallSecretName = "heimdall"
 
 // injectCmd represents the inject command
 var injectCmd = &cobra.Command{
@@ -32,9 +49,98 @@ var injectCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(injectCmd)
 
-	rootCmd.Flags().StringVar(&configFile, "config", "", "Heimdall config file to be injected")
+	injectCmd.Flags().StringVar(&configFileLocation, "config", "", "Heimdall config file to be injected (required)")
+	injectCmd.Flags().StringVar(&variable, "variable", "", "Heimdall variable to be injected (required)")
+	injectCmd.Flags().StringVar(&data, "data", "", "Variable to be encrypted (required)")
+	injectCmd.MarkFlagRequired("config")
+	injectCmd.MarkFlagRequired("variable")
+	injectCmd.MarkFlagRequired("data")
 }
 
 func run(cmd *cobra.Command, args []string) {
-	GetKubernetesClient()
+	client := GetKubernetesClient()
+
+	// Open file from in-mem filesystem
+	configFile, err := os.Open(configFileLocation)
+	defer configFile.Close()
+
+	if err != nil {
+		glog.Fatal("Config file not found")
+	}
+
+	configuration := &models.Configuration{}
+	byteArray, err := ioutil.ReadAll(configFile)
+	if err != nil {
+		glog.Fatal("Config file could not be read")
+	}
+
+	err = yaml.Unmarshal(byteArray, configuration)
+
+	if err != nil {
+		glog.Fatal("Config file format corrupted")
+	}
+
+	changed := false
+	for _, entity := range configuration.Entities {
+		if entity.Name == variable {
+			if entity.Encrypted {
+				entity.Value = encryptValue(client, *configuration, data)
+				changed = true
+			} else {
+				glog.Fatal("Variable not set to use encryption")
+			}
+		}
+	}
+
+	if !changed {
+		glog.Fatal("Variable not found")
+	}
+
+	changedConfig, err := yaml.Marshal(&configuration)
+	if err != nil {
+		glog.Fatal("Could not marshal config file")
+	}
+
+	_, err = configFile.Write(changedConfig)
+
+	if err != nil {
+		glog.Fatal("Could not write config file")
+	}
+}
+
+func encryptValue(client kubernetes.Interface, configuration models.Configuration, data string) string {
+	res, err := client.CoreV1().Secrets(configuration.Metadata.Namespace).Get(HeimdallSecretName, metaV1.GetOptions{})
+
+	if err != nil {
+		glog.Fatal("Heimdall keyset not found")
+	}
+
+	hash := sha512.New()
+	ciphertext, err := rsa.EncryptOAEP(hash, rand.Reader, bytesToPublicKey([]byte(res.StringData["publicKey"])), []byte(data), nil)
+	if err != nil {
+		glog.Fatal("Could not encrypt data")
+	}
+	return string(ciphertext)
+}
+
+func bytesToPublicKey(pub []byte) *rsa.PublicKey {
+	block, _ := pem.Decode(pub)
+	enc := x509.IsEncryptedPEMBlock(block)
+	b := block.Bytes
+	var err error
+	if enc {
+		b, err = x509.DecryptPEMBlock(block, nil)
+		if err != nil {
+			glog.Fatal("Could not decrypt public key")
+		}
+	}
+	ifc, err := x509.ParsePKIXPublicKey(b)
+	if err != nil {
+		glog.Fatal("Could not parse public key")
+	}
+	key, ok := ifc.(*rsa.PublicKey)
+	if !ok {
+		glog.Fatal("Could not create public key")
+	}
+	return key
 }

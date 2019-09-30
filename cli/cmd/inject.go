@@ -28,6 +28,7 @@ import (
 	"github.com/jepp2078/heimdall/models"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
+	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -36,7 +37,8 @@ var configFileLocation string
 var variable string
 var data string
 
-const HeimdallSecretName = "heimdall"
+const bitSize = 2048
+const heimdallSecretName = "heimdall"
 
 // injectCmd represents the inject command
 var injectCmd = &cobra.Command{
@@ -109,10 +111,27 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func encryptValue(client kubernetes.Interface, configuration models.Configuration, data string) string {
-	res, err := client.CoreV1().Secrets(configuration.Metadata.Namespace).Get(HeimdallSecretName, metaV1.GetOptions{})
+	secret := &coreV1.Secret{}
+	res, err := client.CoreV1().Secrets(configuration.Metadata.Namespace).Get(heimdallSecretName, metaV1.GetOptions{})
 
 	if err != nil {
-		glog.Fatal("Heimdall keyset not found")
+		reader := rand.Reader
+		key, err := rsa.GenerateKey(reader, bitSize)
+
+		if err != nil {
+			glog.Fatal("Could not generate RSA key")
+		}
+
+		secret.SetName(heimdallSecretName)
+		secret.SetNamespace(configuration.Metadata.Namespace)
+		secret.StringData = make(map[string]string, 2)
+		secret.StringData["publicKey"] = getPublicPEMKey(&key.PublicKey)
+		secret.StringData["privateKey"] = getPEMKey(key)
+
+		res, err = client.CoreV1().Secrets(configuration.Metadata.Namespace).Create(secret)
+		if err != nil {
+			glog.Fatal("Could not create secret")
+		}
 	}
 
 	hash := sha512.New()
@@ -143,4 +162,26 @@ func bytesToPublicKey(pub []byte) *rsa.PublicKey {
 		glog.Fatal("Could not create public key")
 	}
 	return key
+}
+
+func getPEMKey(key *rsa.PrivateKey) string {
+	var privateKey = &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}
+	bytes := pem.EncodeToMemory(privateKey)
+
+	return string(bytes)
+}
+
+func getPublicPEMKey(pubkey *rsa.PublicKey) string {
+
+	var pemkey = &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: x509.MarshalPKCS1PublicKey(pubkey),
+	}
+
+	bytes := pem.EncodeToMemory(pemkey)
+
+	return string(bytes)
 }

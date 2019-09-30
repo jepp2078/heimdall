@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: heimdall-injector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: heimdall-injector
+subjects:
+- kind: ServiceAccount
+  name: heimdall-injector
+  namespace: kube-system

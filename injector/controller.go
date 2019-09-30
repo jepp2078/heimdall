@@ -217,6 +217,10 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 func (c *Controller) generateConfiguration(reference string) (*models.Configuration, error) {
 	// Split the configuration reference in the format: identification:location:file
 	resource := strings.Split(reference, "#")
+
+	if len(resource) < 2 {
+		return nil, fmt.Errorf("%s", "heimdall annotation not formatted correctly.")
+	}
 	location := resource[0]
 	file := resource[1]
 

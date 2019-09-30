@@ -27,7 +27,7 @@ var (
 	kubeConfigFile    = flag.String("kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
 	gitCredentials    = flag.String("git-credentials", "", "Reference to secret that holds git credentials. Formatted username:password. If left blank, no credentials will be used.")
 	cleanUpConfigmaps = flag.Bool("configmap-cleanup", false, "If set to true, config-maps injected into deployments, will be deleted when the deployment is deleted.")
-	keysAddr          = flag.String("keys-address", "heimdall-keys:8080", "The address of the heimdall-keys pod")
+	keysAddr          = flag.String("keys-address", "heimdall-keys", "The address of the heimdall-keys pod")
 )
 
 func init() {
@@ -213,9 +213,8 @@ func getKubernetesClient() kubernetes.Interface {
 }
 
 func createKeysClient() (*grpc.ClientConn, error) {
-	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithInsecure())
-	conn, err := grpc.Dial(*keysAddr, opts...)
+	addr := fmt.Sprintf("%s.kube-system.svc.cluster.local:8080", *keysAddr)
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 		return nil, err

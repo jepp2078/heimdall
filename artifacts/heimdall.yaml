@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heimdall
+  template:
+    metadata:
+      labels:
+        app: heimdall
+    spec:
+      containers:
+      - name: keys
+        image: jepp2078/heimdall-keys:1.0.0
+        ports:
+        - containerPort: 8081
+      - name: injector
+        image: jepp2078/heimdall-injector:1.0.0
+        ports:
+        - containerPort: 8080
+      serviceAccountName: heimdall

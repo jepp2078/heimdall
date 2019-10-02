@@ -15,6 +15,7 @@ import (
 
 var (
 	kubeConfigFile = flag.String("kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
+	port           = flag.String("port", "8081", "Application port to use")
 )
 
 func init() {
@@ -31,12 +32,12 @@ func main() {
 
 	// construct the Controller object which has all of the necessary components to
 	// handle logging and connections
-	controller := Controller{
+	grpcServer := Controller{
 		logger:    logger,
 		clientset: client,
 	}
 
-	go controller.Run()
+	go grpcServer.Run(*port)
 
 	// use a channel to handle OS signals to terminate and gracefully shut
 	// down processing

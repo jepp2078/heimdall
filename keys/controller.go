@@ -33,12 +33,13 @@ type Controller struct {
 // The Key Manager will check for this key, and return a reference to it if it exists.
 // If the key doesn't exist an error will be returned to the callee.
 func (c *Controller) GetPrivateKey(ctx context.Context, namespace *generated.Namespace) (*generated.Key, error) {
+	c.logger.Infof("Getting private key for namespace: %s", namespace.GetNamespace())
 	res, err := c.clientset.CoreV1().Secrets(namespace.GetNamespace()).Get(heimdallSecretName, metaV1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 	outKey := &generated.Key{}
-	outKey.Key = res.StringData["privateKey"]
+	outKey.Key = string(res.Data["privateKey"])
 	return outKey, nil
 }
 
@@ -46,6 +47,7 @@ func (c *Controller) GetPrivateKey(ctx context.Context, namespace *generated.Nam
 // If the key doesn't exist a private/public key pair will be created in the specified namespace,
 // and a reference to the public key will be returned to the callee.
 func (c *Controller) GetPublicKey(ctx context.Context, namespace *generated.Namespace) (*generated.Key, error) {
+	c.logger.Infof("Getting public key for namespace: %s", namespace.GetNamespace())
 	secret := &coreV1.Secret{}
 	res, err := c.clientset.CoreV1().Secrets(namespace.GetNamespace()).Get(heimdallSecretName, metaV1.GetOptions{})
 
@@ -70,22 +72,8 @@ func (c *Controller) GetPublicKey(ctx context.Context, namespace *generated.Name
 	}
 
 	outKey := &generated.Key{}
-	outKey.Key = res.StringData["publicKey"]
+	outKey.Key = string(res.Data["publicKey"])
 	return outKey, nil
-}
-
-//Run is the main path of execution for the controller loop
-func (c *Controller) Run() {
-	lis, err := net.Listen("tcp", "localhost:8080")
-	if err != nil {
-		c.logger.Fatalf("failed to listen: %v", err)
-	}
-	var opts []grpc.ServerOption
-	grpcServer := grpc.NewServer(opts...)
-	generated.RegisterHeimdallKeysServer(grpcServer, c)
-	c.logger.Info("GRPC service exposed on tcp://127.0.0.1:8080/")
-	c.logger.Fatalf("Fatal: %s", grpcServer.Serve(lis))
-	defer grpcServer.GracefulStop()
 }
 
 func getPEMKey(key *rsa.PrivateKey) string {
@@ -108,4 +96,16 @@ func getPublicPEMKey(pubkey *rsa.PublicKey) string {
 	bytes := pem.EncodeToMemory(pemkey)
 
 	return string(bytes)
+}
+
+func (c *Controller) Run(port string) {
+	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", port))
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	var opts []grpc.ServerOption
+	grpcServer := grpc.NewServer(opts...)
+	generated.RegisterHeimdallKeysServer(grpcServer, c)
+	log.Infof("GRPC service exposed on tcp://127.0.0.1:%s/", port)
+	log.Fatalf("Fatal: %s", grpcServer.Serve(lis))
 }

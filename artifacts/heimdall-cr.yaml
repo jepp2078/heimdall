@@ -1,0 +1,8 @@
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: heimdall
+rules:
+- apiGroups: ["", "apps"]
+  resources: ["configmaps", "deployments", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

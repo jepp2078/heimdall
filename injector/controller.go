@@ -28,12 +28,16 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	b64 "encoding/base64"
+	"encoding/pem"
+
 	"github.com/jepp2078/heimdall/generated"
 	"github.com/jepp2078/heimdall/models"
 )
 
 const (
-	HeimdallAnnotationName              = "heimdall"
+	HeimdallAnnotationRepository        = "heimdall-repository"
+	HeimdallAnnotationPath              = "heimdall-path"
 	HeimdallNameAnnotationName          = "heimdall-name"
 	HeimdallConfigVersionAnnotationName = "heimdall-config-version"
 	HeimdallInjectedAnnotationName      = "heimdall-injected"
@@ -150,12 +154,12 @@ func (c *Controller) processNextItem() bool {
 		deployment := item.(*apiV1.Deployment)
 		c.logger.Printf("Deployment discovered: %s/%s", deployment.Namespace, deployment.Name)
 		annotations := deployment.Annotations
-		if _, found := annotations[HeimdallAnnotationName]; found {
+		if _, found := annotations[HeimdallAnnotationRepository]; found {
 			c.logger.Printf("Annotation found")
 			if _, found := annotations[HeimdallInjectedAnnotationName]; found {
 				c.logger.Printf("Skipping. Deployment already injected")
 			} else {
-				err := c.addConfigurationToDeployment(deployment, annotations[HeimdallAnnotationName])
+				err := c.addConfigurationToDeployment(deployment, annotations[HeimdallAnnotationRepository], annotations[HeimdallAnnotationPath])
 				if err != nil {
 					if c.queue.NumRequeues(key) < 3 {
 						c.logger.Error(err)
@@ -176,10 +180,10 @@ func (c *Controller) processNextItem() bool {
 	return true
 }
 
-func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, reference string) error {
+func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, repository string, path string) error {
 	deployment := obj.DeepCopy()
 	// Create configmap and append to container
-	configuration, err := c.generateConfiguration(reference)
+	configuration, err := c.generateConfiguration(repository, path)
 
 	if err != nil {
 		return fmt.Errorf("%s", err)
@@ -214,16 +218,7 @@ func (c *Controller) addConfigurationToDeployment(obj *apiV1.Deployment, referen
 	return nil
 }
 
-func (c *Controller) generateConfiguration(reference string) (*models.Configuration, error) {
-	// Split the configuration reference in the format: identification:location:file
-	resource := strings.Split(reference, "#")
-
-	if len(resource) < 2 {
-		return nil, fmt.Errorf("%s", "heimdall annotation not formatted correctly.")
-	}
-	location := resource[0]
-	file := resource[1]
-
+func (c *Controller) generateConfiguration(repository string, path string) (*models.Configuration, error) {
 	// Filesystem abstraction based on memory
 	fs := memfs.New()
 	// Git objects storer based on memory
@@ -239,21 +234,21 @@ func (c *Controller) generateConfiguration(reference string) (*models.Configurat
 			return nil, fmt.Errorf("%s", err)
 		}
 
-		err = c.fetchConfigFromRemote(location, fs, storer, secret)
+		err = c.fetchConfigFromRemote(repository, fs, storer, secret)
 
 		if err != nil {
 			return nil, fmt.Errorf("%s", err)
 		}
 
 	} else {
-		err := c.fetchConfigFromRemote(location, fs, storer, &coreV1.Secret{})
+		err := c.fetchConfigFromRemote(repository, fs, storer, &coreV1.Secret{})
 
 		if err != nil {
 			return nil, fmt.Errorf("%s", err)
 		}
 	}
 
-	configuration, err := c.unmarshalConfiguration(file, fs)
+	configuration, err := c.unmarshalConfiguration(path, fs)
 
 	if err != nil {
 		return nil, fmt.Errorf("%s", err)
@@ -376,13 +371,20 @@ func (c *Controller) createConfigMapFromConfiguration(configuration *models.Conf
 
 func unencryptConfiguration(data string, key *generated.Key) (string, error) {
 	hash := sha512.New()
-	pKey, err := x509.ParsePKCS1PrivateKey([]byte(key.GetKey()))
+	pem, _ := pem.Decode([]byte(key.GetKey()))
+
+	pKey, err := x509.ParsePKCS1PrivateKey(pem.Bytes)
 
 	if err != nil {
 		return "", fmt.Errorf("%s", err)
 	}
 
-	plaintext, err := rsa.DecryptOAEP(hash, rand.Reader, pKey, []byte(data), nil)
+	dataBytes, err := b64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return "", fmt.Errorf("%s", err)
+	}
+
+	plaintext, err := rsa.DecryptOAEP(hash, rand.Reader, pKey, dataBytes, nil)
 
 	if err != nil {
 		return "", fmt.Errorf("%s", err)

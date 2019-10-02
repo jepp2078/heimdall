@@ -20,6 +20,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/x509"
+	b64 "encoding/base64"
 	"encoding/pem"
 	"io/ioutil"
 	"os"
@@ -83,10 +84,11 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	changed := false
-	for _, entity := range configuration.Entities {
-		if entity.Name == variable {
-			if entity.Encrypted {
-				entity.Value = encryptValue(client, *configuration, data)
+
+	for i := 0; i < len(configuration.Entities); i++ {
+		if configuration.Entities[i].Name == variable {
+			if configuration.Entities[i].Encrypted {
+				configuration.Entities[i].Value = encryptValue(client, *configuration, data)
 				changed = true
 			} else {
 				glog.Fatal("Variable not set to use encryption")
@@ -103,11 +105,13 @@ func run(cmd *cobra.Command, args []string) {
 		glog.Fatal("Could not marshal config file")
 	}
 
-	_, err = configFile.Write(changedConfig)
+	glog.Info(string(changedConfig))
+	err = ioutil.WriteFile(configFileLocation, changedConfig, 0644)
 
 	if err != nil {
 		glog.Fatal("Could not write config file")
 	}
+
 }
 
 func encryptValue(client kubernetes.Interface, configuration models.Configuration, data string) string {
@@ -135,11 +139,11 @@ func encryptValue(client kubernetes.Interface, configuration models.Configuratio
 	}
 
 	hash := sha512.New()
-	ciphertext, err := rsa.EncryptOAEP(hash, rand.Reader, bytesToPublicKey([]byte(res.StringData["publicKey"])), []byte(data), nil)
+	ciphertext, err := rsa.EncryptOAEP(hash, rand.Reader, bytesToPublicKey(res.Data["publicKey"]), []byte(data), nil)
 	if err != nil {
 		glog.Fatal("Could not encrypt data")
 	}
-	return string(ciphertext)
+	return b64.StdEncoding.EncodeToString(ciphertext)
 }
 
 func bytesToPublicKey(pub []byte) *rsa.PublicKey {
@@ -153,14 +157,12 @@ func bytesToPublicKey(pub []byte) *rsa.PublicKey {
 			glog.Fatal("Could not decrypt public key")
 		}
 	}
-	ifc, err := x509.ParsePKIXPublicKey(b)
+	key, err := x509.ParsePKCS1PublicKey(b)
+
 	if err != nil {
-		glog.Fatal("Could not parse public key")
-	}
-	key, ok := ifc.(*rsa.PublicKey)
-	if !ok {
 		glog.Fatal("Could not create public key")
 	}
+
 	return key
 }
 

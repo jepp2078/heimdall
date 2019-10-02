@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall-test
+  labels:
+    app: heimdall-test
+  annotations:
+    heimdall-repository: https://github.com/jepp2078/heimdall-test.git
+    heimdall-path: config-v2.yaml
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: heimdall-test
+  template:
+    metadata:
+      labels:
+        app: heimdall-test
+    spec:
+      containers:
+      - name: busybox
+        image: busybox

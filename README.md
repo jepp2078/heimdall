@@ -1,7 +1,5 @@
 # Heimdall
 
-#### Design document - 23/05-2019
-
 ## Purpose
 
 Heimdall&#39;s purpose is to ease the use and management of centralized application configuration. When working with sensitive application configuration such as credentials, situations may arise where access to these needs to be restricted to a few select individuals. Furthermore Heimdall intend to remove the need of exposing configuration to the CI/CD pipeline.

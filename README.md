@@ -1,4 +1,4 @@
-![Heimdall_Logo](https://i.imgur.com/yDVS9us.png)
+![Heimdall_Logo](https://i.imgur.com/Q8jL2dJ.png)
 # Heimdall
 
 ## Purpose
